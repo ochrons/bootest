@@ -17,10 +17,11 @@ class Boo2PickleTest extends TestCase {
     var ofs = 0
 
     def encodeString(str: String): Unit = {
-      bb.setInt32(ofs, str.length)
+      val bytes = str.getBytes("UTF-8")
+      bb.setInt32(ofs, bytes.length)
       ofs += 4
 
-      str.getBytes("UTF-8").foreach(b => {
+      bytes.foreach(b => {
         bb.setInt8(ofs, b)
         ofs += 1
       })
@@ -58,7 +59,7 @@ class Boo2PickleTest extends TestCase {
     def decodeString: String = {
       val len = data.getInt32(ofs)
       ofs += 4
-      val s = utf8decoder.decode(new Uint8Array(buf, ofs, len))
+      val s = utf8decoder.decode(data8.subarray(ofs, ofs+len))
       ofs += len
       s
     }
@@ -91,7 +92,6 @@ class Boo2PickleTest extends TestCase {
   override def run(data: Seq[TestData], count: Int): TestResult = {
     val encoded = encode(data)
     val encSize = encoded.byteLength
-    println(s"Encoded size $encSize")
     val start = new scala.scalajs.js.Date().getTime()
 
     var tmp = 0

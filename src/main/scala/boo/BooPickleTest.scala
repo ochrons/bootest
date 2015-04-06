@@ -65,7 +65,6 @@ class BooPickleTest extends TestCase {
   override def run(data: Seq[TestData], count: Int): TestResult = {
     val encoded = encode(data)
     val encSize = encoded.limit()
-    println(s"Encoded size $encSize")
     val start = new js.Date().getTime()
 
     var tmp = 0

@@ -44,7 +44,7 @@ object BooApp extends js.JSApp {
         h2("Results"),
         h4("uPickle"), s"Time: ${upResult.time}", br(), s"Size: ${upResult.size}",
         h4("booPickle"), s"Time: ${booResult.time}", br(), s"Size: ${booResult.size}",
-        h4("booPickle (TypedArray)"), s"Time: ${boo2Result.time}", br(), s"Size: ${boo2Result.size}"
+        h4("booPickle (TypedArray, TextDecoder)"), s"Time: ${boo2Result.time}", br(), s"Size: ${boo2Result.size}"
       ).render
       resultDiv.appendChild(results)
     }
@@ -54,7 +54,7 @@ object BooApp extends js.JSApp {
     val count = 100
     val eventNames = Seq("MouseUp", "MouseDown", "MouseMove")
     for (i <- 0 until count) yield {
-      TestData(s"${i * 1234}" * 2, (i * 7) % 100, Range(1, i % 5 + 1).map(j => TestEvent(eventNames(j % eventNames.size), i * j * 1000, (i + j) % 5 == 0)))
+      TestData(s"${i * 1234}" * 40, (i * 7) % 100, Range(1, i % 5 + 1).map(j => TestEvent(eventNames(j % eventNames.size), i * j * 1000, (i + j) % 5 == 0)))
     }
   }
 }

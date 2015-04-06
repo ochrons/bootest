@@ -1,8 +1,13 @@
 package boo
 
 import scala.collection.mutable.ArrayBuffer
+import scala.scalajs.js
 import scala.scalajs.js.typedarray.{ArrayBuffer => TArrayBuffer}
 import scala.scalajs.js.typedarray._
+
+class TextDecoder extends js.Object {
+  def decode(data:js.Any):String = js.native
+}
 
 class Boo2PickleTest extends TestCase {
 
@@ -39,6 +44,8 @@ class Boo2PickleTest extends TestCase {
     buf.slice(0, ofs)
   }
 
+  val utf8decoder = new TextDecoder
+
   def decode(buf: TArrayBuffer): Seq[TestData] = {
     var ofs = 0
     val data = new DataView(buf)
@@ -51,13 +58,9 @@ class Boo2PickleTest extends TestCase {
     def decodeString: String = {
       val len = data.getInt32(ofs)
       ofs += 4
-      val strBytes = new Array[Byte](len)
-      for(i <-0 until len) {
-        strBytes(i) = data8.get(ofs + i)
-      }
-
+      val s = utf8decoder.decode(new Uint8Array(buf, ofs, len))
       ofs += len
-      new String(strBytes, "UTF-8")
+      s
     }
 
     var idx = 0

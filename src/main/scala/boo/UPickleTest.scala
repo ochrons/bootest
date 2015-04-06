@@ -2,7 +2,7 @@ package boo
 
 import upickle._
 
-import scala.scalajs.js.{JSON, Date}
+import scala.scalajs.js.Date
 
 class UPickleTest extends TestCase {
   override def run(data: Seq[TestData], count: Int): TestResult = {
@@ -12,7 +12,7 @@ class UPickleTest extends TestCase {
     val start = new Date().getTime()
 
     var tmp = 0
-    for(i <- 0 until count) {
+    for (i <- 0 until count) {
       val decoded = read[Seq[TestData]](encoded)
       // val decoded = JSON.parse(encoded) // just run JSON parse
 

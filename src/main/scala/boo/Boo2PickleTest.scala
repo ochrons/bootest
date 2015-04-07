@@ -1,5 +1,7 @@
 package boo
 
+import java.util.UUID
+
 import scala.collection.mutable.ArrayBuffer
 import scala.scalajs.js
 import scala.scalajs.js.typedarray.{ArrayBuffer => TArrayBuffer, _}
@@ -18,15 +20,37 @@ class Boo2PickleTest extends TestCase {
     strCache.append("")
     var ofs = 0
 
+    /**
+     * Encodes a string using UTF-8 encoding. Supports caching of strings and special coding for certain patterns.
+     *
+     * When length is negative (or zero), it indicates an index to cache.
+     *
+     * If first byte is 1111 ????, then special codings are applied.
+     * <pre>
+     * 1111 0000 i0 i1 i2 i3                     = 128-bit lowercase UUID
+     * 1111 0001 i0 i1 i2 i3                     = 128-bit UPPERCASE UUID
+     * @param str
+     */
     def encodeString(str: String): Unit = {
       // check if it is in the cache already
       val idx = strCache.indexOf(str)
-      if(idx >= 0) {
+      if (idx >= 0) {
         // use negative length to encode reference to cache, empty string gets encoded as 0-length
         encodeInt(-idx)
+      } else if (str.length == 36 && str.matches("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")) {
+        strCache.append(str)
+        // special coding for UUID
+        // TODO: scala.js has a bug in Long hex parsing (#1582) and is missing Integer.parseUnsignedInt, so hacking it in two pieces
+        val nums = str.replace("-", "").sliding(8, 8).map(s => Integer.parseInt(s.take(4), 16) << 16 | Integer.parseInt(s.drop(4), 16) )
+        bb.setInt8(ofs, 0xF0.toByte)
+        ofs += 1
+        nums.foreach { n =>
+          bb.setInt32(ofs, n)
+          ofs += 4
+        }
       } else {
         // only cache relatively short strings
-        if(str.length < 64)
+        if (str.length < 64)
           strCache.append(str)
         val bytes = str.getBytes("UTF-8")
         encodeInt(bytes.length)
@@ -41,14 +65,15 @@ class Boo2PickleTest extends TestCase {
     /**
      * Encodes an integer efficiently
      * <pre>
-     *   0XXX XXXX                                             = 0 to 127
-     *   1000 XXXX  XXXX XXXX                                  = 128 to 4095
-     *   1001 XXXX  XXXX XXXX                                  = -1 to -4096
-     *   1010 XXXX  XXXX XXXX  XXXX XXXX                       = 4096 to 1048575
-     *   1011 XXXX  XXXX XXXX  XXXX XXXX                       = -4097 to -1048576
-     *   1100 XXXX  XXXX XXXX  XXXX XXXX  XXXX XXXX            = 1048575 to 268435455
-     *   1101 XXXX  XXXX XXXX  XXXX XXXX  XXXX XXXX            = -1048576 to -268435456
-     *   1110 0000  XXXX XXXX  XXXX XXXX  XXXX XXXX  XXXX XXXX = anything else
+     * 0XXX XXXX                                             = 0 to 127
+     * 1000 XXXX  XXXX XXXX                                  = 128 to 4095
+     * 1001 XXXX  XXXX XXXX                                  = -1 to -4096
+     * 1010 XXXX  XXXX XXXX  XXXX XXXX                       = 4096 to 1048575
+     * 1011 XXXX  XXXX XXXX  XXXX XXXX                       = -4097 to -1048576
+     * 1100 XXXX  XXXX XXXX  XXXX XXXX  XXXX XXXX            = 1048575 to 268435455
+     * 1101 XXXX  XXXX XXXX  XXXX XXXX  XXXX XXXX            = -1048576 to -268435456
+     * 1110 0000  XXXX XXXX  XXXX XXXX  XXXX XXXX  XXXX XXXX = anything else
+     * 1111 ????                                             = reserved for special codings
      * </pre>
      * @param i
      */
@@ -120,47 +145,104 @@ class Boo2PickleTest extends TestCase {
     val strCache = new ArrayBuffer[String](16)
     strCache.append("")
 
-    def decodeString: String = {
-      val len = decodeInt
-      if( len <= 0 ) {
-        strCache(-len)
-      } else {
-        val s = utf8decoder.decode(data8.subarray(ofs, ofs + len))
-        ofs += len
-        if (s.length < 64)
-          strCache.append(s)
-        s
-      }
-    }
-
     def decodeInt: Int = {
       val b = data.getUint8(ofs)
       ofs += 1
-      if( (b & 0x80) != 0 ) {
+      if ((b & 0x80) != 0) {
         // special coding, expand sign bit
         val b0 = b & 0xF | (b << 27 >> 27)
-        (b >> 4) & ~1 match {
-          case 0x8 =>
+        b >> 4 match {
+          case 0x8 | 0x9 =>
             val b1 = data.getUint8(ofs)
             ofs += 1
             b0 << 8 | b1
-          case 0xA =>
+          case 0xA | 0xB =>
             val b1 = data.getUint16(ofs)
             ofs += 2
             b0 << 16 | b1
-          case 0xC =>
-            val b1 = data.getInt32(ofs-1) & 0x00FFFFFF
+          case 0xC | 0xD =>
+            val b1 = data.getInt32(ofs - 1) & 0x00FFFFFF
             ofs += 3
             b0 << 24 | b1
           case 0xE =>
             val b1 = data.getInt32(ofs)
             ofs += 4
             b1
+          case _ =>
+            throw new IllegalArgumentException("Unknown integer coding")
         }
       } else {
         b
       }
     }
+
+    def decodeIntExt: Either[Int, Int] = {
+      val b = data.getUint8(ofs)
+      ofs += 1
+      if ((b & 0x80) != 0) {
+        // special coding, expand sign bit
+        val b0 = b & 0xF | (b << 27 >> 27)
+        b >> 4 match {
+          case 0x8 | 0x9 =>
+            val b1 = data.getUint8(ofs)
+            ofs += 1
+            Left(b0 << 8 | b1)
+          case 0xA | 0xB =>
+            val b1 = data.getUint16(ofs)
+            ofs += 2
+            Left(b0 << 16 | b1)
+          case 0xC | 0xD =>
+            val b1 = data.getInt32(ofs - 1) & 0x00FFFFFF
+            ofs += 3
+            Left(b0 << 24 | b1)
+          case 0xE =>
+            val b1 = data.getInt32(ofs)
+            ofs += 4
+            Left(b1)
+          case 0xF =>
+            Right(b)
+        }
+      } else {
+        Left(b)
+      }
+    }
+
+    def decodeString: String = {
+      decodeIntExt match {
+        case Left(strLen) if strLen <= 0 =>
+          strCache(-strLen)
+        case Left(strLen) =>
+          val s = utf8decoder.decode(data8.subarray(ofs, ofs + strLen))
+          ofs += strLen
+          if (s.length < 64)
+            strCache.append(s)
+          s
+
+        case Right(code) if code == 0xF0 =>
+          // read 128 bits
+          val i0 = data.getInt32(ofs)
+          val i1 = data.getInt32(ofs+4)
+          val i2 = data.getInt32(ofs+8)
+          val i3 = data.getInt32(ofs+12)
+          ofs += 16
+          // convert to UUID format
+          @inline def paddedHex8(i: Int): String = {
+            val s = Integer.toHexString(i)
+            "00000000".substring(s.length) + s
+          }
+
+          @inline def paddedHex4(i: Int): String = {
+            val s = Integer.toHexString(i)
+            "0000".substring(s.length) + s
+          }
+
+          val s = paddedHex8(i0) + "-" + paddedHex4(i1 >>> 16) + "-" + paddedHex4(i1 & 0xffff) + "-" +
+            paddedHex4(i2 >>> 16) + "-" + paddedHex4(i2 & 0xffff) + paddedHex8(i3)
+          strCache.append(s)
+          s
+      }
+    }
+
     val len = decodeInt
     // println(s"Decoded size $len")
     val td = new ArrayBuffer[TestData](len)
@@ -187,10 +269,10 @@ class Boo2PickleTest extends TestCase {
     td
   }
 
-  def toHex(buf:TArrayBuffer):String = {
+  def toHex(buf: TArrayBuffer): String = {
     val sb = new StringBuilder
     val v = new Uint8Array(buf)
-    for(i <- 0 until buf.byteLength) {
+    for (i <- 0 until buf.byteLength) {
       sb.append("%02x ".format(v.get(i)))
     }
     sb.toString()

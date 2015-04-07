@@ -9,11 +9,23 @@ class BooPickleTest extends TestCase {
 
   def encode(data: Seq[TestData]): ByteBuffer = {
     val bb = ByteBuffer.allocateDirect(100000)
+    val strCache = new ArrayBuffer[String](16)
+    // empty string is always at location 0
+    strCache.append("")
 
     def encodeString(str: String): Unit = {
-      val strBytes = str.getBytes("UTF-8")
-      bb.putInt(strBytes.length)
-      bb.put(strBytes)
+      // check if it is in the cache already
+      val idx = strCache.indexOf(str)
+      if (idx >= 0) {
+        bb.putInt(-idx)
+      } else {
+        // only cache relatively short strings
+        if (str.length < 64)
+          strCache.append(str)
+        val strBytes = str.getBytes("UTF-8")
+        bb.putInt(strBytes.length)
+        bb.put(strBytes)
+      }
     }
     bb.putInt(data.size)
     data.foreach { d =>
@@ -33,12 +45,21 @@ class BooPickleTest extends TestCase {
     val len = data.getInt
     // println(s"Decoded size $len")
     val td = new ArrayBuffer[TestData](len)
+    val strCache = new ArrayBuffer[String](16)
+    strCache.append("")
 
     def decodeString: String = {
       val len = data.getInt
-      val strBytes = new Array[Byte](len)
-      data.get(strBytes)
-      new String(strBytes, "UTF-8")
+      if (len <= 0) {
+        strCache(-len)
+      } else {
+        val strBytes = new Array[Byte](len)
+        data.get(strBytes)
+        val s = new String(strBytes, "UTF-8")
+        if (s.length < 64)
+          strCache.append(s)
+        s
+      }
     }
 
     var idx = 0

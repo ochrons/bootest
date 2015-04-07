@@ -13,17 +13,29 @@ class Boo2PickleTest extends TestCase {
   def encode(data: Seq[TestData]): TArrayBuffer = {
     val buf = new TArrayBuffer(100000)
     val bb = new DataView(buf)
+    val strCache = new ArrayBuffer[String](16)
+    // empty string is always at location 0
+    strCache.append("")
     var ofs = 0
 
     def encodeString(str: String): Unit = {
-      val bytes = str.getBytes("UTF-8")
-      bb.setInt32(ofs, bytes.length)
-      ofs += 4
+      // check if it is in the cache already
+      val idx = strCache.indexOf(str)
+      if(idx >= 0) {
+        // use negative length to encode reference to cache, empty string gets encoded as 0-length
+        encodeInt(-idx)
+      } else {
+        // only cache relatively short strings
+        if(str.length < 64)
+          strCache.append(str)
+        val bytes = str.getBytes("UTF-8")
+        encodeInt(bytes.length)
 
-      bytes.foreach(b => {
-        bb.setInt8(ofs, b)
-        ofs += 1
-      })
+        bytes.foreach(b => {
+          bb.setInt8(ofs, b)
+          ofs += 1
+        })
+      }
     }
 
     /**
@@ -55,25 +67,25 @@ class Boo2PickleTest extends TestCase {
           bb.setInt8(ofs, (i & 0xFF).toByte)
           ofs += 1
         } else if (i < 268435455) {
-          bb.setUint32(ofs, 0xC0000000 | i)
+          bb.setInt32(ofs, 0xC0000000 | i)
           ofs += 4
         } else {
           bb.setInt8(ofs, 0xE0.toByte)
           ofs += 1
-          bb.setUint32(ofs, i)
+          bb.setInt32(ofs, i)
           ofs += 4
         }
       } else {
         if (i >= -4096) {
-          bb.setUint16(ofs, 0x9000 | (i & 0x07FF).toShort)
+          bb.setUint16(ofs, 0x9000 | (i & 0x0FFF).toShort)
           ofs += 2
         } else if (i >= -1048576) {
-          bb.setUint16(ofs, (0xB000 | ((i >> 8) & 0x07FFF)).toShort)
+          bb.setUint16(ofs, (0xB000 | ((i >> 8) & 0x0FFFF)).toShort)
           ofs += 2
           bb.setInt8(ofs, (i & 0xFF).toByte)
           ofs += 1
         } else if (i >= -268435456) {
-          bb.setUint32(ofs, 0xD0000000 | (i & 0x07FFFFFF))
+          bb.setInt32(ofs, 0xD0000000 | (i & 0x0FFFFFFF))
           ofs += 4
         } else {
           bb.setInt8(ofs, 0xE0.toByte)
@@ -104,13 +116,21 @@ class Boo2PickleTest extends TestCase {
   def decode(buf: TArrayBuffer): Seq[TestData] = {
     var ofs = 0
     val data = new DataView(buf)
-    val data8 = new Int8Array(buf)
+    val data8 = new Uint8Array(buf)
+    val strCache = new ArrayBuffer[String](16)
+    strCache.append("")
+
     def decodeString: String = {
-      val len = data.getInt32(ofs)
-      ofs += 4
-      val s = utf8decoder.decode(data8.subarray(ofs, ofs + len))
-      ofs += len
-      s
+      val len = decodeInt
+      if( len <= 0 ) {
+        strCache(-len)
+      } else {
+        val s = utf8decoder.decode(data8.subarray(ofs, ofs + len))
+        ofs += len
+        if (s.length < 64)
+          strCache.append(s)
+        s
+      }
     }
 
     def decodeInt: Int = {
@@ -167,9 +187,19 @@ class Boo2PickleTest extends TestCase {
     td
   }
 
+  def toHex(buf:TArrayBuffer):String = {
+    val sb = new StringBuilder
+    val v = new Uint8Array(buf)
+    for(i <- 0 until buf.byteLength) {
+      sb.append("%02x ".format(v.get(i)))
+    }
+    sb.toString()
+  }
+
   override def run(data: Seq[TestData], count: Int): TestResult = {
     val encoded = encode(data)
     val encSize = encoded.byteLength
+    println(toHex(encoded))
     val start = new scala.scalajs.js.Date().getTime()
 
     var tmp = 0

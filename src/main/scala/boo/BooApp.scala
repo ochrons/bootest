@@ -54,7 +54,7 @@ object BooApp extends js.JSApp {
     val count = 100
     val eventNames = Seq("MouseUp", "MouseDown", "MouseMove")
     for (i <- 0 until count) yield {
-      TestData(s"${i * 1234}äåö" * 1, (i * 7) % 100, Range(1, i % 5 + 1).map(j => TestEvent(eventNames(j % eventNames.size), i * j * 1000, (i + j) % 5 == 0)))
+      TestData(s"${i * 1233}ä" * 1, (i * 7) % 100, Range(1, i % 5 + 1).map(j => TestEvent(eventNames(j % eventNames.size), i * j * 1003, (i + j) % 5 == 0)))
     }
   }
 }

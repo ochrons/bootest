@@ -2,11 +2,12 @@ package boo
 
 import upickle._
 
-import scala.scalajs.js.Date
+import scala.scalajs.js.{JSON, Date}
 
 class UPickleTest extends TestCase {
   override def run(data: Seq[TestData], count: Int): TestResult = {
     val encoded = write(data)
+    println(encoded)
     val encSize = encoded.getBytes.length
 
     val start = new Date().getTime()
